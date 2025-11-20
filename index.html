@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的睡眠记录</title>
+    <style>
+        :root { --primary: #007AFF; --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; --border: #e5e5ea; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 16px; max-width: 600px; margin: 0 auto; }
+        
+        /* 卡片样式 */
+        .card { background: var(--card); border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        h2 { margin: 0 0 16px 0; font-size: 18px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+        
+        /* 表单样式 */
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 13px; color: #8e8e93; margin-bottom: 6px; font-weight: 500; }
+        .input-row { display: flex; gap: 10px; }
+        input[type="datetime-local"], select, input[type="text"] {
+            flex: 1; padding: 12px; border: 1px solid var(--border); border-radius: 10px;
+            font-size: 16px; background: #fff; appearance: none; -webkit-appearance: none;
+        }
+        
+        /* 按钮 */
+        .btn { border: none; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 15px; cursor: pointer; transition: opacity 0.2s; text-align: center; }
+        .btn:active { opacity: 0.7; }
+        .btn-primary { background: var(--primary); color: white; width: 100%; }
+        .btn-secondary { background: #e5e5ea; color: #000; width: auto; padding: 10px 16px; white-space: nowrap; }
+        .btn-danger { background: #ff3b30; color: white; padding: 4px 10px; font-size: 12px; border-radius: 6px; margin-left: 5px; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); font-size: 13px; padding: 8px 16px; }
+
+        /* 统计表格 */
+        .log-item { border-bottom: 1px solid var(--border); padding: 12px 0; display: flex; justify-content: space-between; align-items: flex-start; }
+        .log-item:last-child { border-bottom: none; }
+        .log-date { font-weight: 600; font-size: 15px; }
+        .log-meta { font-size: 12px; color: #8e8e93; margin-top: 2px; }
+        .log-score { font-size: 18px; font-weight: 700; text-align: right; min-width: 40px; }
+        .log-tags { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; flex-wrap: wrap; }
+        
+        /* 标签颜色 */
+        .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+        .tag-green { background: #e4f9e8; color: #34c759; }
+        .tag-red { background: #ffebeb; color: #ff3b30; }
+        .tag-gray { background: #f2f2f7; color: #8e8e93; }
+        
+        .score-good { color: #34c759; }
+        .score-bad { color: #ff3b30; }
+        
+        /* 底部工具栏 */
+        .toolbar { display: flex; gap: 10px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>📝 记录今日睡眠</h2>
+        
+        <div class="form-group">
+            <label class="form-label">关屏时间 (Screen Off)</label>
+            <div class="input-row">
+                <input type="datetime-local" id="screenOff">
+                <button class="btn btn-secondary" onclick="setNow('screenOff')">现在</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">熄灯时间 (Lights Out) *必填</label>
+            <div class="input-row">
+                <input type="datetime-local" id="lightsOut">
+                <button class="btn btn-secondary" onclick="setNow('lightsOut')">现在</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">睡眠质量 & 备注</label>
+            <div class="input-row">
+                <select id="quality" style="flex: 0 0 80px;">
+                    <option value="5">5分</option>
+                    <option value="4" selected>4分</option>
+                    <option value="3">3分</option>
+                    <option value="2">2分</option>
+                    <option value="1">1分</option>
+                </select>
+                <input type="text" id="notes" placeholder="如：喝了咖啡...">
+            </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveLog()">保存记录</button>
+    </div>
+
+    <div class="card">
+        <h2>
+            📊 历史记录
+            <span style="font-size:12px; color:#8e8e93; font-weight:400" id="avgScore"></span>
+        </h2>
+        <div id="logList">
+            <!-- 记录会插在这里 -->
+        </div>
+    </div>
+
+    <!-- 数据备份区域 -->
+    <div style="text-align: center; margin-top: 30px; opacity: 0.6;">
+        <p style="font-size:12px; margin-bottom:10px;">数据保存在手机浏览器缓存中</p>
+        <button class="btn btn-outline" onclick="exportData()">📤 导出数据 (备份)</button>
+        <input type="file" id="importFile" style="display:none" onchange="importData(this)">
+        <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">📥 导入数据</button>
+    </div>
+
+<script>
+    // ================= 逻辑配置区 =================
+    // 你可以在这里修改哪些天算“周末”(目标00:30)
+    // 5=周五, 6=周六, 0=周日。 如果你周日晚上也想晚睡，就加上0: [5, 6, 0]
+    const WEEKEND_DAYS = [5, 6]; 
+    
+    // ================= 程序主体 =================
+    document.addEventListener('DOMContentLoaded', loadLogs);
+
+    function setNow(id) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById(id).value = now.toISOString().slice(0, 16);
+    }
+
+    function saveLog() {
+        const lightsOutStr = document.getElementById('lightsOut').value;
+        const screenOffStr = document.getElementById('screenOff').value;
+        const quality = document.getElementById('quality').value;
+        const notes = document.getElementById('notes').value;
+
+        if (!lightsOutStr) { alert("必须填写熄灯时间"); return; }
+
+        const entry = {
+            id: Date.now(),
+            lightsOut: lightsOutStr,
+            screenOff: screenOffStr,
+            quality: quality,
+            notes: notes
+        };
+
+        let logs = getLogs();
+        logs.unshift(entry);
+        localStorage.setItem('sleepLogs', JSON.stringify(logs));
+        
+        // 重置表单
+        document.getElementById('notes').value = '';
+        loadLogs();
+    }
+
+    function getLogs() {
+        return JSON.parse(localStorage.getItem('sleepLogs') || '[]');
+    }
+
+    function deleteLog(id) {
+        if(!confirm('确定删除这条记录吗？')) return;
+        let logs = getLogs().filter(l => l.id !== id);
+        localStorage.setItem('sleepLogs', JSON.stringify(logs));
+        loadLogs();
+    }
+
+    function loadLogs() {
+        const logs = getLogs();
+        const container = document.getElementById('logList');
+        container.innerHTML = '';
+        
+        let totalPoints = 0;
+
+        logs.forEach(log => {
+            // 1. 计算归属日期（如果是凌晨12点前睡，算昨天的）
+            const outDate = new Date(log.lightsOut);
+            let adjustDate = new Date(outDate);
+            if (outDate.getHours() < 12) {
+                adjustDate.setDate(adjustDate.getDate() - 1);
+            }
+            
+            // 2. 判断周末/工作日
+            const dayOfWeek = adjustDate.getDay(); // 0-6
+            const isWeekend = WEEKEND_DAYS.includes(dayOfWeek);
+            
+            // 3. 设定目标
+            // 周末目标：次日00:30，工作日目标：次日00:00
+            let targetDate = new Date(adjustDate);
+            targetDate.setDate(targetDate.getDate() + 1); // 次日
+            targetDate.setHours(isWeekend ? 0 : 0, isWeekend ? 30 : 0, 0, 0);
+            
+            // 4. 判断是否准时
+            const isOnTime = outDate <= targetDate;
+            
+            // 5. 判断缓冲 (>=30min)
+            let bufferMins = 0;
+            let isBufferOk = false;
+            if (log.screenOff) {
+                const offDate = new Date(log.screenOff);
+                bufferMins = Math.floor((outDate - offDate) / 1000 / 60);
+                if (bufferMins >= 30) isBufferOk = true;
+            }
+            
+            // 6. 计算分数
+            let score = 0;
+            if (isOnTime) score += 0.8;
+            if (isBufferOk) score += 0.2;
+            let points = Math.round(score * 10);
+            totalPoints += points;
+
+            // 7. 渲染HTML
+            const dateStr = adjustDate.toLocaleDateString('zh-CN', {month:'2-digit', day:'2-digit', weekday:'short'});
+            const timeStr = `${outDate.getHours()}:${String(outDate.getMinutes()).padStart(2,'0')}`;
+            
+            const html = `
+                <div class="log-item">
+                    <div>
+                        <div class="log-date">${dateStr} <span style="font-weight:400; font-size:12px; color:#999">${isWeekend ? '(休)' : '(班)'}</span></div>
+                        <div class="log-meta">熄灯: ${timeStr} ${log.notes ? '· ' + log.notes : ''}</div>
+                    </div>
+                    <div>
+                        <div class="log-score ${points >= 8 ? 'score-good' : 'score-bad'}">${points}</div>
+                        <div class="log-tags">
+                            <span class="tag ${isOnTime ? 'tag-green' : 'tag-red'}">${isOnTime ? '早睡' : '熬夜'}</span>
+                            <span class="tag ${isBufferOk ? 'tag-green' : 'tag-gray'}">缓冲${bufferMins}m</span>
+                        </div>
+                        <div style="text-align:right; margin-top:5px;">
+                             <button class="btn-danger" onclick="deleteLog(${log.id})">×</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML += html;
+        });
+        
+        // 更新平均分
+        if(logs.length > 0) {
+            document.getElementById('avgScore').innerText = `平均分: ${(totalPoints / logs.length).toFixed(1)}`;
+        }
+    }
+
+    // ================= 数据导入导出 =================
+    function exportData() {
+        const dataStr = localStorage.getItem('sleepLogs');
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sleep_data_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+    }
+
+    function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (confirm(`发现 ${data.length} 条记录，确定要覆盖当前数据吗？`)) {
+                    localStorage.setItem('sleepLogs', JSON.stringify(data));
+                    loadLogs();
+                    alert("导入成功！");
+                }
+            } catch (err) {
+                alert("文件格式错误");
+            }
+        };
+        reader.readAsText(file);
+    }
+</script>
+</body>
+</html>
